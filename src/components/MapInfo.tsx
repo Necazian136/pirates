@@ -152,6 +152,7 @@ export function StatsBar({
   timeMs,
   poolSize,
   intersectionSize,
+  minusOneIntersections,
   solutionLabel,
   mapIssues,
   warnings,
@@ -161,12 +162,20 @@ export function StatsBar({
   timeMs: number;
   poolSize: number;
   intersectionSize: number;
+  minusOneIntersections: number[];
   solutionLabel: string;
   mapIssues: string[];
   warnings: string[];
 }) {
+  const moMin = minusOneIntersections.length ? Math.min(...minusOneIntersections) : 0;
+  const moMax = minusOneIntersections.length ? Math.max(...minusOneIntersections) : 0;
   const items = [
     { k: 'Пересечение всех подсказок', v: `${intersectionSize} тайл`, good: intersectionSize === 1 },
+    {
+      k: 'Зная N−1 подсказок',
+      v: minusOneIntersections.length ? `${moMin}–${moMax} тайлов` : '—',
+      good: moMin >= 2 && (moMax / Math.max(1, moMin) <= 1.8),
+    },
     { k: 'Точка сокровища', v: solutionLabel },
     { k: 'Попыток генерации', v: String(attempts) },
     { k: 'Кандидатов-подсказок', v: String(poolSize) },
@@ -174,7 +183,7 @@ export function StatsBar({
   ];
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {items.map((it) => (
           <div key={it.k} className="rounded-xl border border-amber-200/10 bg-[#0d1526]/70 px-3 py-2">
             <p className="text-[10px] uppercase tracking-wide text-amber-200/50">{it.k}</p>

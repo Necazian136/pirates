@@ -22,9 +22,18 @@ export interface PuzzleStats {
   solutionTile: number;
   clueShares: number[];
   pairShares: number[][];
+  /** размер пересечения всех подсказок, КРОМЕ одной (для каждой из N) */
+  minusOneIntersections: number[];
   mapIssues: string[];
   balanceScore: number;
 }
+
+/**
+ * Допуск для свойства «зная N−1 подсказок, сокровище не найти»: пересечение
+ * любых N−1 подсказок обязано оставлять ≥2 тайла, а остатки всех таких наборов
+ * должны отличаться не более чем на MINUS_ONE_TOLERANCE (80%).
+ */
+export const MINUS_ONE_TOLERANCE = 0.8;
 
 export interface PuzzleResult {
   map: GameMap;
@@ -88,6 +97,8 @@ interface RoundCfg {
   pairMin: number;
   pairMax: number;
   ideal: number;
+  /** ожидаемый остаток при знании N−1 подсказок: count * ideal^(N−1) */
+  subIdeal: number;
 }
 
 /**
@@ -110,6 +121,7 @@ function roundCfg(players: number, count: number, phase: number): RoundCfg {
   const pairIdeal = ideal * ideal;
   return {
     ideal,
+    subIdeal: Math.pow(ideal, players - 1) * count,
     min: Math.max(0.045, ideal * p.lo),
     max: Math.min(0.9, ideal * p.hi),
     sizeSpread: ideal * p.spreadK,
@@ -130,12 +142,15 @@ interface Candidate {
   sol: number;
   score: number;
   pairShares: number[][];
+  minusOne: number[];
   interSize: number;
 }
 
 /**
  * Жёсткие правила отбора: равная «ширина поиска», ни одна подсказка не является
- * подмножеством другой, парные пересечения сужают поиск примерно одинаково.
+ * подмножеством другой, парные пересечения сужают поиск примерно одинаково,
+ * а пересечение любых N−1 подсказок оставляет ≥2 тайла — причём у всех таких
+ * наборов остаток примерно один и тот же (допуск MINUS_ONE_TOLERANCE).
  */
 function assess(items: Item[], sol: number, count: number, cfg: RoundCfg): Candidate | null {
   const shares = items.map((i) => i.size / count);
@@ -165,18 +180,40 @@ function assess(items: Item[], sol: number, count: number, cfg: RoundCfg): Candi
     }
   }
 
+  // свойство «N−1 подсказок недостаточно»: считаем пересечение всех наборов
+  // «все подсказки, кроме одной»; каждый остаток обязан содержать ≥2 тайла
+  // (иначе последняя подсказка избыточна и сокровище можно найти раньше времени),
+  // а разброс остатков не должен превышать MINUS_ONE_TOLERANCE (80%).
+  const minusOne: number[] = [];
+  for (let skip = 0; skip < items.length; skip++) {
+    let acc: Uint32Array | null = null;
+    for (let j = 0; j < items.length; j++) {
+      if (j === skip) continue;
+      acc = acc === null ? items[j].words : andWords(acc, items[j].words);
+    }
+    const s = acc ? sizeOf(acc) : 0;
+    if (s < 2) return null;
+    minusOne.push(s);
+  }
+  const moMin = Math.min(...minusOne);
+  const moMax = Math.max(...minusOne);
+  if (moMax / moMin > 1 + MINUS_ONE_TOLERANCE) return null;
+
   let score = 0;
   for (const s of shares) score += Math.abs(s - cfg.ideal) * 1.1;
   score += stdev(shares) * 3.2;
   score += stdev(pairs) * 3.0;
   for (const p of pairs) score += Math.abs(p - cfg.ideal * cfg.ideal) * 0.45;
+  // остатки N−1: тянем их к ожидаемому значению count·ideal^(N−1) и к равенству
+  for (const m of minusOne) score += Math.abs(m - cfg.subIdeal) * 0.25;
+  score += stdev(minusOne) * 2.6;
   const families = new Set(items.map((i) => clueFamily(i.inst.clue)));
   if (families.size < Math.min(items.length, 3)) score += 0.35;
   if (items.length > 2 && families.size === 1) score += 0.5;
   // поощряем разнообразие типов: ландшафт + фракции + территории пиратов
   score -= 0.05 * (families.size - 1);
 
-  return { items, sol, score, pairShares, interSize: 1 };
+  return { items, sol, score, pairShares, minusOne, interSize: 1 };
 }
 
 function searchSolutions(
@@ -217,7 +254,7 @@ function searchSolutions(
           const res = assess(chosen, sol, count, cfg);
           if (res) exact.push(res);
         } else if (c <= 4) {
-          near.push({ items: chosen.slice(), sol, score: 10 + c, pairShares: [], interSize: c });
+          near.push({ items: chosen.slice(), sol, score: 10 + c, pairShares: [], minusOne: [], interSize: c });
         }
         return;
       }
@@ -252,7 +289,7 @@ function searchSolutions(
 export function generatePuzzle(options: PuzzleOptions): PuzzleResult {
   const started = Date.now();
   const players = Math.max(2, Math.min(5, options.players));
-  const maxAttempts = options.maxAttempts ?? 24;
+  const maxAttempts = options.maxAttempts ?? 50;
   const warnings: string[] = [];
 
   let bestNear: { map: GameMap; items: Item[]; interSize: number; poolSize: number; attempt: number } | null = null;
@@ -307,6 +344,24 @@ export function generatePuzzle(options: PuzzleOptions): PuzzleResult {
         warnings.push('Контрольная проверка пересечения не прошла — карта перегенерирована');
         continue;
       }
+      // контрольная проверка «N−1 недостаточно»: считаем остатки по спискам тайлов
+      const minusOne = clues.map((_, skip) => {
+        let acc: number[] | null = null;
+        for (let j = 0; j < clues.length; j++) {
+          if (j === skip) continue;
+          const set = new Set(clues[j].tiles);
+          acc = acc ? acc.filter((i) => set.has(i)) : clues[j].tiles.slice();
+        }
+        return acc ? acc.length : 0;
+      });
+      const moMin = Math.min(...minusOne);
+      if (
+        moMin < 2 ||
+        Math.max(...minusOne) / moMin > 1 + MINUS_ONE_TOLERANCE
+      ) {
+        warnings.push('Условие «N−1 подсказок недостаточно» не выполнено — карта перегенерирована');
+        continue;
+      }
       return {
         map,
         clues,
@@ -320,6 +375,7 @@ export function generatePuzzle(options: PuzzleOptions): PuzzleResult {
           solutionTile: solution,
           clueShares: clues.map((c) => c.tiles.length / count),
           pairShares: best.pairShares,
+          minusOneIntersections: best.minusOne,
           mapIssues: issues,
           balanceScore: best.score,
         },
@@ -352,6 +408,7 @@ export function generatePuzzle(options: PuzzleOptions): PuzzleResult {
         solutionTile: inter[0] ?? -1,
         clueShares: clues.map((c) => c.tiles.length / bestNear.map.grid.count),
         pairShares: [],
+        minusOneIntersections: [],
         mapIssues: [],
         balanceScore: -1,
       },
@@ -380,6 +437,7 @@ export function generatePuzzle(options: PuzzleOptions): PuzzleResult {
       solutionTile: -1,
       clueShares: [],
       pairShares: [],
+      minusOneIntersections: [],
       mapIssues: [],
       balanceScore: -1,
     },

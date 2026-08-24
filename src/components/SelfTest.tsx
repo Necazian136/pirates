@@ -15,6 +15,8 @@ interface Row {
   seed: string;
   ok: boolean;
   inter: number;
+  moMin: number;
+  moMax: number;
   minShare: number;
   maxShare: number;
   attempts: number;
@@ -48,11 +50,16 @@ export default function SelfTest() {
         return acc.filter((i) => s.has(i));
       }, res.clues[0]?.tiles.slice() ?? []);
       const shares = res.clues.map((c) => c.tiles.length / res.map.grid.count);
+      const mo = res.stats.minusOneIntersections;
+      const moMin = mo.length ? Math.min(...mo) : 0;
+      const moMax = mo.length ? Math.max(...mo) : 0;
       out.push({
         players: job.players,
         seed: job.seed,
-        ok: res.ok && inter.length === 1,
+        ok: res.ok && inter.length === 1 && moMin >= 2 && (moMax / Math.max(1, moMin) <= 1.8),
         inter: inter.length,
+        moMin,
+        moMax,
         minShare: shares.length ? Math.min(...shares) : 0,
         maxShare: shares.length ? Math.max(...shares) : 0,
         attempts: res.stats.attempts,
@@ -74,7 +81,8 @@ export default function SelfTest() {
         <div>
           <h2 className="font-serif text-lg text-amber-100">Самопроверка генератора</h2>
           <p className="text-[11px] text-amber-200/50">
-            8 прогонов (2–5 пиратов, карта 12×9): пересечение всех подсказок = 1 тайл, разброс долей, попытки и время.
+            8 прогонов (2–5 пиратов, карта 12×9): пересечение всех подсказок = 1 тайл, N−1 подсказок оставляют ≥2
+            тайла с разбросом ≤80%, попытки и время.
           </p>
         </div>
         <button
@@ -88,10 +96,10 @@ export default function SelfTest() {
 
       {rows.length > 0 && (
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[640px] border-collapse font-mono text-[11px]">
+          <table className="w-full min-w-[720px] border-collapse font-mono text-[11px]">
             <thead>
               <tr className="text-amber-200/60">
-                {['пираты', 'seed', 'пересечение', 'доля min', 'доля max', 'попыток', 'мс', 'нарушений'].map((h) => (
+                {['пираты', 'seed', 'пересечение', 'N−1 →', 'доля min', 'доля max', 'попыток', 'мс', 'нарушений'].map((h) => (
                   <th key={h} className="border-b border-amber-200/15 px-2 py-1.5 text-left font-normal">
                     {h}
                   </th>
@@ -105,6 +113,13 @@ export default function SelfTest() {
                   <td className="border-b border-amber-200/10 px-2 py-1.5">{r.seed}</td>
                   <td className={`border-b border-amber-200/10 px-2 py-1.5 ${r.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
                     {r.inter} {r.ok ? '✓' : '✗'}
+                  </td>
+                  <td
+                    className={`border-b border-amber-200/10 px-2 py-1.5 ${
+                      r.moMin >= 2 && r.moMax / Math.max(1, r.moMin) <= 1.8 ? 'text-emerald-300' : 'text-rose-300'
+                    }`}
+                  >
+                    {r.moMin ? `${r.moMin}–${r.moMax}` : '—'}
                   </td>
                   <td className="border-b border-amber-200/10 px-2 py-1.5">{(r.minShare * 100).toFixed(0)}%</td>
                   <td className="border-b border-amber-200/10 px-2 py-1.5">{(r.maxShare * 100).toFixed(0)}%</td>
