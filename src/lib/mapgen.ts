@@ -20,7 +20,7 @@ import {
 export interface MapGenOptions {
   width: number;
   height: number;
-  /** доля карты под захваченные территории (по умолчанию 0.09) */
+  /** доля карты под захваченные территории; по умолчанию по 0.09 на каждого пирата */
   pirateShare?: number;
   /** минимальная дистанция между строениями */
   minBuildingDist?: number;
@@ -208,7 +208,7 @@ function placeBuildings(grid: HexGrid, rng: Rng, tiles: Tile[], minDist: number,
   }
 }
 
-/** Захваченные территории: суммарно pirateShare карты, минимум по 2 тайла, возможна дробь на чанки. */
+/** Захваченные территории: по pirateShare карты на КАЖДОГО пирата, минимум по 2 тайла, возможна дробь на чанки. */
 function placePirateTerritories(grid: HexGrid, rng: Rng, tiles: Tile[], share: number, pirates: Pirate[]) {
   const n = Math.max(1, pirates.length);
   const total = Math.max(n * 2, Math.round(grid.count * share));
@@ -294,7 +294,8 @@ export function generateMap(opts: MapGenOptions, rng: Rng): GameMap {
     blackTerritory: !!opts.blackTerritory,
   };
   const pirates: Pirate[] = extras.blackTerritory ? [...CORE_PIRATES, 'blackbeard'] : [...CORE_PIRATES];
-  const share = opts.pirateShare ?? 0.09 * (pirates.length / 2);
+  // по 9% карты на каждую территорию пирата (не суммарно)
+  const share = opts.pirateShare ?? 0.09 * pirates.length;
 
   placePirateTerritories(grid, rng, tiles, share, pirates);
   placeBuildings(grid, rng, tiles, opts.minBuildingDist ?? 3, extras.blackBuildings);
@@ -352,7 +353,7 @@ export function validateMap(map: GameMap): { ok: boolean; issues: string[] } {
 
   const pirates: Pirate[] = map.extras.blackTerritory ? [...CORE_PIRATES, 'blackbeard'] : [...CORE_PIRATES];
   const total = tiles.filter((t) => t.pirate).length;
-  const expected = Math.max(pirates.length * 2, Math.round(grid.count * 0.09 * (pirates.length / 2)));
+  const expected = Math.max(pirates.length * 2, Math.round(grid.count * 0.09 * pirates.length));
   if (Math.abs(total - expected) > 2) {
     issues.push(`Захваченные территории: ${total} тайлов вместо ~${expected}`);
   }
