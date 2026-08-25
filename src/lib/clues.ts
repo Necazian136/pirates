@@ -241,7 +241,7 @@ export function buildCluePool(map: GameMap): ClueInstance[] {
     specs.push({ kind: 'pirate-territory', on: false, pirate: p });
     specs.push({ kind: 'pirate-territory', on: true, pirate: p });
     for (let n = 1; n <= 3; n++) specs.push({ kind: 'pirate-dist', op: 'within', n, pirate: p });
-    for (let n = 1; n <= 3; n++) specs.push({ kind: 'pirate-dist', op: 'outside', n, pirate: p });
+    for (let n = 1; n <= 2; n++) specs.push({ kind: 'pirate-dist', op: 'outside', n, pirate: p });
   }
 
   const seen = new Set<string>();
