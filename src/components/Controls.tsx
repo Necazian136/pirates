@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEFAULT_CLUE_POOL_LIMITS, type CluePoolLimits, type NumRange } from '../lib/clues';
 import type { PuzzleOptions } from '../lib/generator';
 
 interface Props {
@@ -15,6 +16,21 @@ interface Props {
 const label = 'text-[11px] uppercase tracking-wider text-amber-200/60';
 const field =
   'w-full rounded-lg border border-amber-200/15 bg-[#0d1526]/80 px-3 py-2 text-sm text-amber-50 outline-none focus:border-amber-300/60';
+const numField =
+  'w-full min-w-0 rounded-md border border-amber-200/15 bg-[#0d1526]/80 px-2 py-1 text-center text-xs text-amber-50 outline-none focus:border-amber-300/60';
+
+const LIMIT_FIELDS: Array<{ key: keyof CluePoolLimits; title: string }> = [
+  { key: 'terrainSingleWithin', title: 'Ландшафт, ВНУТРИ' },
+  { key: 'terrainSingleOutside', title: 'Ландшафт, ЗА предел.' },
+  { key: 'terrainPairWithin', title: 'Пара ландшафтов, ВНУТРИ' },
+  { key: 'terrainPairOutside', title: 'Пара ландшафтов, ЗА предел.' },
+  { key: 'buildingWithin', title: 'Здания, ВНУТРИ' },
+  { key: 'buildingOutside', title: 'Здания, ЗА предел.' },
+  { key: 'pirateWithin', title: 'Пираты, ВНУТРИ' },
+  { key: 'pirateOutside', title: 'Пираты, ЗА предел.' },
+];
+
+const clampN = (v: string): number => Math.max(0, Math.min(4, Number(v) || 0));
 
 export default function Controls({
   options,
@@ -29,6 +45,13 @@ export default function Controls({
   const [seedDraft, setSeedDraft] = useState(options.seed);
 
   useEffect(() => setSeedDraft(options.seed), [options.seed]);
+
+  const limits: CluePoolLimits = { ...DEFAULT_CLUE_POOL_LIMITS, ...options.cluePoolLimits };
+  const setLimit = (key: keyof CluePoolLimits, next: NumRange) =>
+    onChange({
+      ...options,
+      cluePoolLimits: { ...DEFAULT_CLUE_POOL_LIMITS, ...options.cluePoolLimits, [key]: next },
+    });
 
   return (
     <div className="space-y-4 rounded-2xl border border-amber-200/15 bg-[#111c33]/70 p-4 shadow-xl backdrop-blur">
@@ -149,6 +172,45 @@ export default function Controls({
           <span className="text-sm text-amber-100/90">Показать сокровище 💎</span>
         </label>
       </div>
+
+      <details className="rounded-xl border border-amber-200/15 bg-[#0d1526]/60 px-3 py-2">
+        <summary className={`${label} cursor-pointer select-none`}>Границы пула подсказок (n: от … до)</summary>
+        <div className="mt-2 space-y-1.5">
+          {LIMIT_FIELDS.map(({ key, title }) => {
+            const r = limits[key];
+            return (
+              <label key={key} className="flex items-center gap-2">
+                <span className="w-[150px] shrink-0 truncate text-[11px] text-amber-200/60" title={title}>
+                  {title}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={4}
+                  value={r.min}
+                  onChange={(e) => {
+                    const v = clampN(e.target.value);
+                    setLimit(key, { min: v, max: Math.max(v, r.max) });
+                  }}
+                  className={numField}
+                />
+                <span className="text-[11px] text-amber-200/40">…</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={4}
+                  value={r.max}
+                  onChange={(e) => {
+                    const v = clampN(e.target.value);
+                    setLimit(key, { min: Math.min(r.min, v), max: v });
+                  }}
+                  className={numField}
+                />
+              </label>
+            );
+          })}
+        </div>
+      </details>
     </div>
   );
 }

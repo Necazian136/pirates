@@ -16,6 +16,7 @@ import {
 } from './types';
 
 export const N_WORDS: Record<number, string> = {
+  0: 'тайлов',
   1: 'одного тайла',
   2: 'двух тайлов',
   3: 'трёх тайлов',
@@ -207,8 +208,47 @@ export function evaluateClue(clue: Clue, ctx: ClueContext): number[] {
 
 
 
+export interface NumRange {
+  min: number;
+  max: number;
+}
+
+/** Границы итераторов n для каждого цикла генерации подсказок в buildCluePool. */
+export interface CluePoolLimits {
+  /** terrain-dist within для одиночных ландшафтов */
+  terrainSingleWithin: NumRange;
+  /** terrain-dist outside для одиночных ландшафтов */
+  terrainSingleOutside: NumRange;
+  /** terrain-dist within для пар ландшафтов */
+  terrainPairWithin: NumRange;
+  /** terrain-dist outside для пар ландшафтов */
+  terrainPairOutside: NumRange;
+  /** building-dist within (фракции и типы строений) */
+  buildingWithin: NumRange;
+  /** building-dist outside (фракции и типы строений) */
+  buildingOutside: NumRange;
+  /** pirate-dist within */
+  pirateWithin: NumRange;
+  /** pirate-dist outside */
+  pirateOutside: NumRange;
+}
+
+export const DEFAULT_CLUE_POOL_LIMITS: CluePoolLimits = {
+  terrainSingleWithin: { min: 1, max: 2 },
+  terrainSingleOutside: { min: 0, max: 1 },
+  terrainPairWithin: { min: 1, max: 1 },
+  terrainPairOutside: { min: 0, max: 0 },
+  buildingWithin: { min: 1, max: 2 },
+  buildingOutside: { min: 0, max: 1 },
+  pirateWithin: { min: 1, max: 2 },
+  pirateOutside: { min: 0, max: 1 },
+};
+
 /** Все возможные подсказки для данной карты. */
-export function buildCluePool(map: GameMap): ClueInstance[] {
+export function buildCluePool(
+  map: GameMap,
+  limits: CluePoolLimits = DEFAULT_CLUE_POOL_LIMITS,
+): ClueInstance[] {
   const ctx = buildContext(map);
   const specs: Clue[] = [];
 
@@ -217,22 +257,35 @@ export function buildCluePool(map: GameMap): ClueInstance[] {
   for (let i = 0; i < TERRAINS.length; i++) {
     for (let j = i + 1; j < TERRAINS.length; j++) pairs.push([TERRAINS[i], TERRAINS[j]]);
   }
-  const combos = [...singles, ...pairs];
 
-  for (const ts of combos) {
-    for (let n = 1; n <= 3; n++) specs.push({ kind: 'terrain-dist', op: 'within', n, terrains: ts });
-    for (let n = 1; n <= 2; n++) specs.push({ kind: 'terrain-dist', op: 'outside', n, terrains: ts });
+  for (const ts of singles) {
+    for (let n = limits.terrainSingleWithin.min; n <= limits.terrainSingleWithin.max; n++)
+      specs.push({ kind: 'terrain-dist', op: 'within', n, terrains: ts });
+    for (let n = limits.terrainSingleOutside.min; n <= limits.terrainSingleOutside.max; n++)
+      specs.push({ kind: 'terrain-dist', op: 'outside', n, terrains: ts });
+    specs.push({ kind: 'terrain-on', terrains: ts });
+  }
+
+  for (const ts of pairs) {
+    for (let n = limits.terrainPairWithin.min; n <= limits.terrainPairWithin.max; n++)
+      specs.push({ kind: 'terrain-dist', op: 'within', n, terrains: ts });
+    for (let n = limits.terrainPairOutside.min; n <= limits.terrainPairOutside.max; n++)
+      specs.push({ kind: 'terrain-dist', op: 'outside', n, terrains: ts });
     specs.push({ kind: 'terrain-on', terrains: ts });
   }
 
   const presentFactions = FACTIONS.filter((f) => (ctx.buildingTiles[`faction:${f}`] ?? []).length > 0);
   for (const f of presentFactions) {
-    for (let n = 1; n <= 3; n++) specs.push({ kind: 'building-dist', op: 'within', n, target: { type: 'faction', faction: f } });
-    for (let n = 1; n <= 2; n++) specs.push({ kind: 'building-dist', op: 'outside', n, target: { type: 'faction', faction: f } });
+    for (let n = limits.buildingWithin.min; n <= limits.buildingWithin.max; n++)
+      specs.push({ kind: 'building-dist', op: 'within', n, target: { type: 'faction', faction: f } });
+    for (let n = limits.buildingOutside.min; n <= limits.buildingOutside.max; n++)
+      specs.push({ kind: 'building-dist', op: 'outside', n, target: { type: 'faction', faction: f } });
   }
   for (const kind of ['lighthouse', 'shack'] as const) {
-    for (let n = 1; n <= 3; n++) specs.push({ kind: 'building-dist', op: 'within', n, target: { type: 'kind', kind } });
-    for (let n = 1; n <= 2; n++) specs.push({ kind: 'building-dist', op: 'outside', n, target: { type: 'kind', kind } });
+    for (let n = limits.buildingWithin.min; n <= limits.buildingWithin.max; n++)
+      specs.push({ kind: 'building-dist', op: 'within', n, target: { type: 'kind', kind } });
+    for (let n = limits.buildingOutside.min; n <= limits.buildingOutside.max; n++)
+      specs.push({ kind: 'building-dist', op: 'outside', n, target: { type: 'kind', kind } });
   }
 
   const presentPirates = PIRATES.filter((p) => (ctx.pirateTiles[p] ?? []).length > 0);
@@ -240,8 +293,10 @@ export function buildCluePool(map: GameMap): ClueInstance[] {
   for (const p of pirateTargets) {
     specs.push({ kind: 'pirate-territory', on: false, pirate: p });
     specs.push({ kind: 'pirate-territory', on: true, pirate: p });
-    for (let n = 1; n <= 3; n++) specs.push({ kind: 'pirate-dist', op: 'within', n, pirate: p });
-    for (let n = 1; n <= 2; n++) specs.push({ kind: 'pirate-dist', op: 'outside', n, pirate: p });
+    for (let n = limits.pirateWithin.min; n <= limits.pirateWithin.max; n++)
+      specs.push({ kind: 'pirate-dist', op: 'within', n, pirate: p });
+    for (let n = limits.pirateOutside.min; n <= limits.pirateOutside.max; n++)
+      specs.push({ kind: 'pirate-dist', op: 'outside', n, pirate: p });
   }
 
   const seen = new Set<string>();

@@ -1,4 +1,4 @@
-import { buildCluePool, clueFamily } from './clues';
+import { buildCluePool, clueFamily, DEFAULT_CLUE_POOL_LIMITS, type CluePoolLimits } from './clues';
 import { generateMap, validateMap } from './mapgen';
 import { hashString, mulberry32, shuffle, type Rng } from './rng';
 import type { ClueInstance, GameMap } from './types';
@@ -13,6 +13,12 @@ export interface PuzzleOptions {
   blackBuildings?: boolean;
   /** Территории Черноборода. */
   blackTerritory?: boolean;
+  /**
+   * Границы итераторов n для каждого цикла buildCluePool (см. CluePoolLimits).
+   * Достаточно указать только изменяемые поля — остальные возьмутся из
+   * DEFAULT_CLUE_POOL_LIMITS.
+   */
+  cluePoolLimits?: Partial<CluePoolLimits>;
 }
 
 export interface PuzzleStats {
@@ -312,7 +318,7 @@ export function generatePuzzle(options: PuzzleOptions): PuzzleResult {
     const { ok: mapOk, issues } = validateMap(map);
     if (!mapOk && attempt <= maxAttempts - 4) continue;
 
-    const pool = buildCluePool(map);
+    const pool = buildCluePool(map, { ...DEFAULT_CLUE_POOL_LIMITS, ...options.cluePoolLimits });
     const count = map.grid.count;
     const words = Math.ceil(count / 32);
     const items: Item[] = pool
